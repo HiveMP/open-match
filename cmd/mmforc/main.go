@@ -40,6 +40,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	resource "k8s.io/apimachinery/pkg/api/resource"
 
 	//"k8s.io/kubernetes/pkg/api"
 	"k8s.io/client-go/kubernetes"
@@ -395,6 +396,97 @@ func submitJob(imageName string, jobName string, clientset *kubernetes.Clientset
 // we use this to kick the evaluator containers too, should be updated to
 // reflect that
 func generateJobSpec(jobName string, imageName string) *batchv1.Job {
+	var containers []apiv1.Container
+	var volumes []apiv1.Volume
+	containers = append(containers, apiv1.Container{
+		// TODO: have these reflect mmf vs evaluator
+		Name:            "mmf",
+		Image:           imageName,
+		ImagePullPolicy: apiv1.PullPolicy(os.Getenv("DOCKER_IMAGE_PULL_POLICY")),
+		Env: []apiv1.EnvVar{
+			{
+				Name:  "PROFILE",
+				Value: jobName,
+			},
+			{
+				Name:  "REDIS_SENTINEL_SERVICE_HOST",
+				Value: os.Getenv("REDIS_SENTINEL_SERVICE_HOST"),
+			},
+			{
+				Name:  "REDIS_SENTINEL_SERVICE_PORT",
+				Value: os.Getenv("REDIS_SENTINEL_SERVICE_PORT"),
+			},
+		},
+	})
+	if os.Getenv("USE_SECURED_REDIS_CONNECTION") == "true" {
+		containers = append(containers, apiv1.Container{
+			Name:            "spiped",
+			Image:           "spiped:1.6.0-alpine",
+			ImagePullPolicy: "IfNotPresent",
+			Command: []string{
+				"/usr/local/bin/spiped",
+			},
+			Args: []string{
+				"-F",
+				"-e",
+				"-s",
+				"[127.0.0.1]:6379",
+				"-t",
+				os.Getenv("SECURED_REDIS_CONNECTION"),
+				"-k",
+				os.Getenv("SECURED_REDIS_PATH"),
+			},
+			SecurityContext: &apiv1.SecurityContext{
+				RunAsNonRoot:           &[]bool{true}[0],
+				RunAsUser:              &[]int64{33}[0],
+				ReadOnlyRootFilesystem: &[]bool{true}[0],
+				Capabilities: &apiv1.Capabilities{
+					Drop: []apiv1.Capability{
+						"ALL",
+					},
+				},
+			},
+			Resources: apiv1.ResourceRequirements{
+				Requests: apiv1.ResourceList{
+					"cpu":    resource.MustParse("10m"),
+					"memory": resource.MustParse("10Mi"),
+				},
+				Limits: apiv1.ResourceList{
+					"cpu":    resource.MustParse("50m"),
+					"memory": resource.MustParse("50Mi"),
+				},
+			},
+			VolumeMounts: []apiv1.VolumeMount{
+				{
+					Name:      "auth-spiped-volume",
+					MountPath: "/auth/spiped",
+					ReadOnly:  true,
+				},
+			},
+			Env: []apiv1.EnvVar{
+				{
+					Name:  "PROFILE",
+					Value: jobName,
+				},
+				{
+					Name:  "REDIS_SENTINEL_SERVICE_HOST",
+					Value: os.Getenv("REDIS_SENTINEL_SERVICE_HOST"),
+				},
+				{
+					Name:  "REDIS_SENTINEL_SERVICE_PORT",
+					Value: os.Getenv("REDIS_SENTINEL_SERVICE_PORT"),
+				},
+			},
+		})
+		volumes = append(volumes, apiv1.Volume{
+			Name: "auth-spiped-volume",
+			VolumeSource: apiv1.VolumeSource{
+				Secret: &apiv1.SecretVolumeSource{
+					SecretName: os.Getenv("SECURED_REDIS_SECRET_NAME"),
+				},
+			},
+		})
+	}
 
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -416,20 +508,8 @@ func generateJobSpec(jobName string, imageName string) *batchv1.Job {
 				},
 				Spec: apiv1.PodSpec{
 					RestartPolicy: "Never",
-					Containers: []apiv1.Container{
-						{
-							// TODO: have these reflect mmf vs evaluator
-							Name:            "mmf",
-							Image:           imageName,
-							ImagePullPolicy: "Always",
-							Env: []apiv1.EnvVar{
-								{
-									Name:  "PROFILE",
-									Value: jobName,
-								},
-							},
-						},
-					},
+					Containers:    containers,
+					Volumes:       volumes,
 				},
 			},
 		},
