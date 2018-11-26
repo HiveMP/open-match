@@ -112,7 +112,7 @@ func (s *frontendAPI) CreateRequest(c context.Context, g *frontend.Group) (*fron
 	// Write group
 	// TODO: Remove playerq module and just use redishelper module once
 	// indexing has its own implementation
-	err := playerq.Create(redisConn, g.Id, g.Properties)
+	err := playerq.Create(redisConn, g.Id, g.Properties, g.QueueId)
 
 	if err != nil {
 		feLog.WithFields(log.Fields{
@@ -141,7 +141,7 @@ func (s *frontendAPI) DeleteRequest(c context.Context, g *frontend.Group) (*fron
 	fnCtx, _ := tag.New(c, tag.Insert(KeyMethod, funcName))
 
 	// Write group
-	err := playerq.Delete(redisConn, g.Id)
+	err := playerq.Delete(redisConn, g.Id, g.QueueId)
 	if err != nil {
 		feLog.WithFields(log.Fields{
 			"error":     err.Error(),
@@ -211,7 +211,7 @@ func (s *frontendAPI) DeleteAssignment(c context.Context, p *frontend.PlayerId) 
 	fnCtx, _ := tag.New(c, tag.Insert(KeyMethod, funcName))
 
 	// Write group
-	err := playerq.Delete(redisConn, p.Id)
+	err := playerq.Delete(redisConn, p.Id, p.QueueId)
 	if err != nil {
 		feLog.WithFields(log.Fields{
 			"error":     err.Error(),

@@ -64,7 +64,7 @@ func playerIndices(redisConn redis.Conn) (results []string, err error) {
 //   "mode.ctf" // TRUE flag key, epoch timestamp value
 // }
 // TODO: Make indexing more customizable.
-func Create(redisConn redis.Conn, playerID string, playerData string) (err error) {
+func Create(redisConn redis.Conn, playerID string, playerData string, queueID string) (err error) {
 	//pdJSON, err := json.Marshal(playerData)
 	pdMap := redisValuetoMap(playerData)
 	check(err, "")
@@ -79,6 +79,10 @@ func Create(redisConn redis.Conn, playerID string, playerData string) (err error
 		redisConn.Send("SADD", "indices", key)
 	}
 
+	if queueID != "" {
+		redisConn.Send("ZINCRBY", "queues", 1, queueID)
+	}
+
 	// Add the player to the built-in indexes
 	redisConn.Send("SADD", "indices", "timestamp")
 	redisConn.Send("ZADD", "timestamp", int(time.Now().Unix()), playerID)
@@ -89,7 +93,7 @@ func Create(redisConn redis.Conn, playerID string, playerData string) (err error
 
 // Update is an alias for Create() in this implementation
 func Update(redisConn redis.Conn, playerID string, playerData string) (err error) {
-	Create(redisConn, playerID, playerData)
+	Create(redisConn, playerID, playerData, "")
 	return
 }
 
@@ -114,7 +118,7 @@ func redisValuetoMap(result string) map[string]interface{} {
 
 // Delete a player's JSON object representation from state storage,
 // and attempt to remove the player's presence in any indexes.
-func Delete(redisConn redis.Conn, playerID string) (err error) {
+func Delete(redisConn redis.Conn, playerID string, queueID string) (err error) {
 	results, err := Retrieve(redisConn, playerID)
 	redisConn.Send("MULTI")
 	redisConn.Send("DEL", playerID)
@@ -125,6 +129,10 @@ func Delete(redisConn redis.Conn, playerID string) (err error) {
 			"field": iName,
 			"key":   playerID}).Debug("Indexing field")
 		redisConn.Send("ZREM", iName, playerID)
+	}
+
+	if queueID != "" {
+		redisConn.Send("ZINCRBY", "queues", -1, queueID)
 	}
 
 	// Remove the playerID from the built-in indexes

@@ -41,6 +41,7 @@ service API {
 message Group{
   string id = 1;            // By convention, string of space-delimited playerIDs 
   string properties = 2;    // By convention, a JSON-encoded string
+  string queueId = 3;        // If provided, the queue ID to be incremented inside the "queues" sorted set while this request is pending
 }
 
 message PlayerId {
